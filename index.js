@@ -6,7 +6,6 @@ const CathayClient = require("./src/CathayClient");
 const { parsePolicies } = require("./src/parser");
 const createReport = require("./src/report");
 
-// BỘ NHỚ TẠM ĐỂ THEO DÕI HỢP ĐỒNG TRONG NGÀY
 const monitoringMap = new Map();
 
 function money(n) {
@@ -14,26 +13,32 @@ function money(n) {
 }
 
 /**
- * Hàm bổ trợ lọc cước theo tháng chỉ định
+ * SỬA LỖI: Lọc kết quả chính xác theo vị trí Index 1:1 của danh sách gửi vào
  */
-function filterResultsByMonth(results, getTargetMonthFn) {
-    for (const r of results) {
-        if (r.error) continue;
+function filterResultsByMonth(results, list) {
+    for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        if (!r || r.error) continue;
         
-        const targetM = getTargetMonthFn(r.policy);
+        const inputItem = list[i];
+        const targetM = inputItem ? inputItem.targetMonth : null;
+        
         if (targetM != null) {
+            // Lọc danh sách nợ, chỉ giữ lại tháng trùng khớp chính xác
             r.items = r.items.filter(item => {
-                const parts = item.date.split('-');
+                const parts = item.date.split('-'); // YYYY-MM-DD
                 if (parts.length >= 2) {
                     return parseInt(parts[1], 10) === targetM;
                 }
                 return false;
             });
             
+            // Tính toán lại thông số sau khi lọc
             r.cathay = r.items.reduce((sum, item) => sum + item.amount, 0);
             r.paid = r.items.length === 0;
             
-            if (r.expected != null) {
+            if (inputItem.expected != null) {
+                r.expected = inputItem.expected;
                 r.diff = r.cathay - r.expected;
                 if (r.cathay === r.expected) {
                     r.match = true;
@@ -48,7 +53,7 @@ function filterResultsByMonth(results, getTargetMonthFn) {
     return results;
 }
 
-// Web server giữ mạng cho Render
+// Web server giữ mạng
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.write("Bot Cathay đang chạy và giám sát 24/7!");
@@ -67,27 +72,24 @@ const client = new Client({
 
 client.once('ready', () => {
     console.log(`🤖 Bot Cathay đã sẵn sàng! Đăng nhập với tên: ${client.user.tag}`);
-    setInterval(autoCheckSubscriptions, 60 * 1000); // Vòng lặp quét ngầm 1 phút
+    setInterval(autoCheckSubscriptions, 60 * 1000);
 });
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
     let fileText = "";
-
-    // Đọc file đính kèm nếu có (vẫn giữ để bot linh hoạt nhận cả file lẫn chữ chat)
     const txtAttachment = message.attachments.find(att => att.name.endsWith('.txt'));
     if (txtAttachment) {
         try {
             const response = await fetch(txtAttachment.url);
             fileText = await response.text();
         } catch (err) {
-            console.error("Lỗi khi đọc file đính kèm:", err.message);
+            console.error("Lỗi đọc file:", err.message);
         }
     }
 
     const combinedText = (message.content || "") + "\n" + fileText;
-
     const list = parsePolicies(combinedText);
     if (list.length === 0) return;
 
@@ -99,40 +101,35 @@ client.on('messageCreate', async (message) => {
         await cathay.init();
         let results = await cathay.checkPolicies(list);
 
-        // Áp dụng bộ lọc tháng
-        results = filterResultsByMonth(results, (policy) => {
-            const found = list.find(item => item.policy === policy);
-            return found ? found.targetMonth : null;
-        });
+        // Áp dụng bộ lọc sửa lỗi trùng lặp
+        results = filterResultsByMonth(results, list);
 
-        // 1. Gửi tin nhắn báo cáo chính (Bản hiển thị ngắn gọn đơn lệch/lỗi)
+        // 1. Gửi tin nhắn báo cáo chi tiết đầy đủ 🟢 và 🔴
         const report = createReport(results);
         await waitMessage.edit(report);
 
-        // 2. TỰ ĐỘNG TẠO TIN NHẮN RIÊNG CHỨA CÁC MÃ CHƯA THANH TOÁN ĐỂ COPY
+        // 2. Tạo tin nhắn riêng chứa các mã chưa thanh toán để copy (Đúng tháng chỉ định)
         const copyableLines = [];
         for (const r of results) {
             if (r.error || r.paid) continue;
             
-            // Duyệt qua từng kỳ cước chưa đóng của mã hợp đồng này
             for (const item of r.items) {
                 const month = parseInt(item.date.split('-')[1], 10);
-                // Định dạng chuẩn: Mã_HD (thángX) Số_Tiền
-                copyableLines.push(`${r.policy} (tháng${month}) ${money(item.amount)}`);
+                copyableLines.push(`${r.policy} (tháng${month}) ${money(item.amount).replace(/đ/g, '')}`);
             }
         }
 
-        // Nếu có đơn chưa thanh toán, bắn thêm 1 tin nhắn riêng biệt ngay phía dưới
         if (copyableLines.length > 0) {
             await message.channel.send(copyableLines.join('\n'));
         }
 
-        // 3. Lưu trạng thái vào bộ nhớ để chạy quét ngầm 1 phút/lần
-        for (const r of results) {
+        // 3. Lưu trạng thái vào bộ nhớ quét ngầm
+        for (let i = 0; i < results.length; i++) {
+            const r = results[i];
             if (r.error) continue;
 
-            const originalInput = list.find(item => item.policy === r.policy);
-            const targetMonth = originalInput ? originalInput.targetMonth : null;
+            const inputItem = list[i];
+            const targetMonth = inputItem ? inputItem.targetMonth : null;
 
             if (!r.paid) {
                 const unpaidItems = r.items.map(item => ({
@@ -146,21 +143,17 @@ client.on('messageCreate', async (message) => {
                     unpaidItems: unpaidItems,
                     channelId: message.channel.id
                 });
-                console.log(`[Giám sát] Đã thêm mã: ${r.policy} (Tháng theo dõi: ${targetMonth || 'Tất cả'})`);
             } else {
                 monitoringMap.delete(r.policy);
             }
         }
 
     } catch (error) {
-        console.error("Lỗi khi xử lý dữ liệu:", error);
-        await waitMessage.edit(`❌ Có lỗi xảy ra trong quá trình xử lý: \`${error.message}\``);
+        console.error("Lỗi xử lý:", error);
+        await waitMessage.edit(`❌ Có lỗi xảy ra: \`${error.message}\``);
     }
 });
 
-/**
- * Hàm quét ngầm tự động mỗi phút
- */
 async function autoCheckSubscriptions() {
     if (monitoringMap.size === 0) return;
 
@@ -168,7 +161,8 @@ async function autoCheckSubscriptions() {
 
     const listToCheck = Array.from(monitoringMap.entries()).map(([policy, data]) => ({
         policy: policy,
-        expected: data.expected
+        expected: data.expected,
+        targetMonth: data.targetMonth
     }));
 
     try {
@@ -176,10 +170,7 @@ async function autoCheckSubscriptions() {
         await cathay.init();
         let results = await cathay.checkPolicies(listToCheck);
 
-        results = filterResultsByMonth(results, (policy) => {
-            const saved = monitoringMap.get(policy);
-            return saved ? saved.targetMonth : null;
-        });
+        results = filterResultsByMonth(results, listToCheck);
 
         for (const r of results) {
             if (r.error) continue;
