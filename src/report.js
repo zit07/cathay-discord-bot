@@ -3,6 +3,8 @@ function money(n) {
 }
 
 function createReport(results) {
+    if (!results || !Array.isArray(results)) return "📋 Không có dữ liệu hiển thị.";
+    
     let paid = 0;
     let unpaid = 0;
     let mismatch = 0;
@@ -11,10 +13,11 @@ function createReport(results) {
     lines.push("📋 KẾT QUẢ KIỂM TRA");
     lines.push("");
 
-    // Duyệt qua TẤT CẢ các mã để hiển thị đầy đủ, không ẩn mã nào
     for (const r of results) {
+        if (!r) continue;
+
         if (r.error) {
-            lines.push(`❌ ${r.policy} - Lỗi: ${r.error}`);
+            lines.push(`❌ ${r.policy || "Mã ẩn"} - Lỗi: ${r.error}`);
             lines.push("");
             continue;
         }
@@ -29,9 +32,9 @@ function createReport(results) {
                 mismatch++;
             }
 
-            if (r.items.length === 1) {
-                // Trường hợp cước 1 kỳ
-                let line = `🔴 ${r.policy} - Cước còn: ${money(r.items[0].amount)}`;
+            const items = r.items || [];
+            if (items.length === 1) {
+                let line = `🔴 ${r.policy} - Cước còn: ${money(items[0].amount || 0)}`;
                 
                 if (r.expected != null) {
                     let matchText = "";
@@ -46,11 +49,10 @@ function createReport(results) {
                     line += ` | Ghi chú: ${money(r.expected)} (${matchText})`;
                 }
                 lines.push(line);
-            } else {
-                // Trường hợp cước nhiều kỳ
-                lines.push(`🔴 ${r.policy} - Tổng cước còn: ${money(r.cathay)}`);
-                for (const item of r.items) {
-                    lines.push(`  • ${item.date} : ${money(item.amount)}`);
+            } else if (items.length > 1) {
+                lines.push(`🔴 ${r.policy} - Tổng cước còn: ${money(r.cathay || 0)}`);
+                for (const item of items) {
+                    if (item) lines.push(`  • ${item.date || 'Không rõ ngày'} : ${money(item.amount || 0)}`);
                 }
                 
                 if (r.expected != null) {
@@ -65,12 +67,13 @@ function createReport(results) {
                     }
                     lines.push(`  [Ghi chú: ${money(r.expected)} | ${matchText}]`);
                 }
+            } else {
+                lines.push(`🔴 ${r.policy} - Cước còn: 0đ`);
             }
-            lines.push(""); // Dòng trống phân cách
+            lines.push(""); 
         }
     }
 
-    // Xóa dòng trống thừa ở cuối cùng trước khi vẽ đường gạch ngang
     if (lines[lines.length - 1] === "") {
         lines.pop();
     }
