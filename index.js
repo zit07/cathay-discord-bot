@@ -34,7 +34,7 @@ const client = new Client({
     ]
 });
 
-client.once('clientReady', () => {
+client.once('ready', () => {
     console.log(`🤖 Bot Cathay đã sẵn sàng! Đăng nhập với tên: ${client.user.tag}`);
     // Kích hoạt vòng lặp kiểm tra tự động mỗi 1 phút
     setInterval(autoCheckSubscriptions, 60 * 1000);
