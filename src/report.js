@@ -32,7 +32,7 @@ function createReport(results) {
             
             if (r.items.length === 1) {
                 // Trường hợp nợ 1 kỳ: Gộp tất cả vào 1 dòng duy nhất
-                let line = `🔴 ${r.policy} - Nợ: ${money(r.items[0].amount)}`;
+                let line = `🔴 ${r.policy} - Cước còn: ${money(r.items[0].amount)}`;
                 
                 if (r.expected != null) {
                     let matchText = "";
