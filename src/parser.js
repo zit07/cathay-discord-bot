@@ -1,65 +1,52 @@
-function parseMoney(line) {
-
-    // Ưu tiên nếu có "=541k"
-    let equal = line.match(/=\s*([\d.]+)\s*k?/i);
-
-    if (equal) {
-        return Number(equal[1].replace(/\./g, "")) * 1000;
-    }
-
-    // 367k + 174k
-    let plus = line.match(/([\d.]+)\s*k?\s*\+\s*([\d.]+)\s*k?/i);
-
-    if (plus) {
-
-        const a = Number(plus[1].replace(/\./g, ""));
-        const b = Number(plus[2].replace(/\./g, ""));
-
-        return (a + b) * 1000;
-    }
-
-    // Tìm số đứng sau mã hợp đồng
-    let policyLine = line.match(/S\d+\D+([\d.]+)\s*k?/i);
-
-    if (policyLine) {
-
-        return Number(policyLine[1].replace(/\./g, "")) * 1000;
-
-    }
-
-    return null;
-
-}
-
 function parsePolicies(text) {
+    if (!text) return [];
+    const lines = text.split('\n');
+    const results = [];
+    
+    for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
 
-    const lines = text
-        .split(/\r?\n/)
-        .map(x => x.trim())
-        .filter(Boolean);
-
-    const result = [];
-
-    for (const line of lines) {
-
-        const match = line.match(/S\d+/i);
-
-        if (!match) continue;
-
-        result.push({
-
-            policy: match[0].toUpperCase(),
-
-            expected: parseMoney(line)
-
+        // 1. Tìm mã hợp đồng (chữ S và 11 chữ số)
+        const policyMatch = line.match(/S\d{11}/i);
+        if (!policyMatch) continue;
+        const policy = policyMatch[0].toUpperCase();
+        
+        // 2. Tìm tháng cần lọc (Ví dụ: tháng6, tháng 6, t6)
+        let targetMonth = null;
+        const monthMatch = line.match(/tháng\s*(\d+)/i);
+        if (monthMatch) {
+            targetMonth = parseInt(monthMatch[1], 10);
+        }
+        
+        // 3. Xóa mã hợp đồng và cụm "tháng X" ra khỏi chuỗi để tìm số tiền chính xác
+        let textForAmount = line.replace(/S\d{11}/i, '');
+        textForAmount = textForAmount.replace(/tháng\s*(\d+)/i, '');
+        
+        // Tìm số tiền còn lại (ưu tiên số ở cuối dòng hoặc số kèm chữ k, đ)
+        const amountMatch = textForAmount.match(/(\d+[\d\.]*)\s*(k|đ|dđ)?(?=[^\d]*$)/i) || textForAmount.match(/(\d+[\d\.]*)\s*(k|đ|dđ)?/i);
+        
+        let expected = null;
+        if (amountMatch) {
+            let rawAmount = amountMatch[1].replace(/\./g, ''); // Xóa dấu chấm phân cách (2.384 -> 2384)
+            let num = parseFloat(rawAmount);
+            
+            const unit = amountMatch[2] ? amountMatch[2].toLowerCase() : '';
+            // Tự động nhân 1000 nếu có chữ 'k' hoặc số viết tắt nhỏ hơn 10000 (1497 -> 1.497.000)
+            if (unit === 'k' || num < 10000) {
+                num = num * 1000;
+            }
+            expected = num;
+        }
+        
+        results.push({
+            policy,
+            expected,
+            targetMonth // Trả thêm thông tin tháng cần lọc
         });
-
     }
-
-    return result;
-
+    
+    return results;
 }
 
-module.exports = {
-    parsePolicies
-};
+module.exports = { parsePolicies };
