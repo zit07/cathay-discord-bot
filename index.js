@@ -13,7 +13,7 @@ function money(n) {
 }
 
 /**
- * BỘ LỌC AN TOÀN TUYỆT ĐỐI: Tự động nhận diện 1:1 theo STT hoặc theo Tên Mã
+ * Bộ lọc cước theo tháng dựa trên STT hoặc tên mã
  */
 function filterResultsByMonth(results, list) {
     if (!results || !Array.isArray(results)) return [];
@@ -22,7 +22,6 @@ function filterResultsByMonth(results, list) {
         const r = results[i];
         if (!r || r.error) continue;
         
-        // Tìm kiếm thông minh: Ưu tiên vị trí index, nếu lệch thì tìm theo tên mã
         let inputItem = list[i];
         if (!inputItem || inputItem.policy !== r.policy) {
             inputItem = list.find(item => item.policy === r.policy);
@@ -31,7 +30,6 @@ function filterResultsByMonth(results, list) {
         const targetM = inputItem ? inputItem.targetMonth : null;
         
         if (targetM != null && Array.isArray(r.items)) {
-            // Lọc chính xác tháng mong muốn
             r.items = r.items.filter(item => {
                 if (!item || !item.date) return false;
                 const parts = item.date.split('-');
@@ -41,7 +39,6 @@ function filterResultsByMonth(results, list) {
                 return false;
             });
             
-            // Cập nhật lại số liệu
             r.cathay = r.items.reduce((sum, item) => sum + (item.amount || 0), 0);
             r.paid = r.items.length === 0;
             
@@ -78,13 +75,19 @@ const client = new Client({
     ]
 });
 
-client.once('ready', () => {
-    console.log(`🤖 Bot Cathay đã online thành công: ${client.user.tag}`);
-    setInterval(autoCheckSubscriptions, 60 * 1000);
-});
+// SỬA LỖI DEPRECATION: Hỗ trợ cả 'ready' và 'clientReady' tùy theo phiên bản của thư viện
+const handleReady = (c) => {
+    const botTag = c?.user?.tag || client?.user?.tag || "Bot Cathay";
+    console.log(`🤖 Bot Cathay đã online thành công với tên: ${botTag}`);
+    if (!client.autoCheckInterval) {
+        client.autoCheckInterval = setInterval(autoCheckSubscriptions, 60 * 1000);
+    }
+};
+
+client.once('ready', handleReady);
+client.once('clientReady', handleReady);
 
 client.on('messageCreate', async (message) => {
-    // Bọc toàn bộ để bảo vệ bot tuyệt đối không bao giờ bị sập nửa chừng
     try {
         if (message.author.bot) return;
 
@@ -111,7 +114,6 @@ client.on('messageCreate', async (message) => {
             await cathay.init();
             let results = await cathay.checkPolicies(list);
 
-            // Chạy bộ lọc cước tháng
             results = filterResultsByMonth(results, list);
 
             // 1. Trả lời bảng kết quả chi tiết (Giao diện đầy đủ)
@@ -229,4 +231,8 @@ async function autoCheckSubscriptions() {
     }
 }
 
-client.login(process.env.DISCORD_TOKEN);
+// Ghi log để theo dõi chính xác thời điểm gửi yêu cầu đăng nhập
+console.log("🔌 Đang kết nối tới Discord Gateway...");
+client.login(process.env.DISCORD_TOKEN).catch(err => {
+    console.error("❌ Không thể đăng nhập vào Discord. Nguyên nhân:", err.message);
+});
