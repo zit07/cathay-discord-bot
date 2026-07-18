@@ -7,31 +7,31 @@ function createReport(results) {
     let unpaid = 0;
     let mismatch = 0;
 
+    // 1. TÍNH TOÁN SỐ LIỆU TỔNG KẾT TRƯỚC (Giữ đếm chính xác cho toàn bộ danh sách)
+    for (const r of results) {
+        if (r.error) continue;
+        if (r.paid) {
+            paid++;
+        } else {
+            unpaid++;
+            if (r.expected != null && !r.match) {
+                mismatch++;
+            }
+        }
+    }
+
     const lines = [];
     lines.push("📋 KẾT QUẢ KIỂM TRA");
     lines.push("");
 
-    // Phân nhóm kết quả để hiển thị theo thứ tự mong muốn
-    const paidList = results.filter(r => r.paid && !r.error);
+    // 2. LỌC DANH SÁCH HIỂN THỊ: Chỉ hiện đơn CHƯA THANH TOÁN và BỊ SAI LỆCH (hoặc đơn không có ghi chú)
     const unpaidList = results.filter(r => !r.paid && !r.error);
-    const errorList = results.filter(r => r.error);
+    const unpaidToDisplay = unpaidList.filter(r => r.expected == null || !r.match);
 
-    // 1. Đưa các đơn ĐÃ THANH TOÁN (🟢) lên trên cùng và thu gọn 1 dòng
-    if (paidList.length > 0) {
-        for (const r of paidList) {
-            lines.push(`🟢 ${r.policy} - Đã thanh toán`);
-            paid++;
-        }
-        lines.push(""); // Dòng trống ngăn cách giữa nhóm Đã thanh toán và Chưa thanh toán
-    }
-
-    // 2. Đưa các đơn CHƯA THANH TOÁN (🔴) xuống phía dưới
-    if (unpaidList.length > 0) {
-        for (const r of unpaidList) {
-            unpaid++;
-            
+    if (unpaidToDisplay.length > 0) {
+        for (const r of unpaidToDisplay) {
             if (r.items.length === 1) {
-                // Trường hợp nợ 1 kỳ: Gộp tất cả vào 1 dòng duy nhất
+                // Trường hợp cước 1 kỳ: Đổi "Nợ" thành "Cước còn"
                 let line = `🔴 ${r.policy} - Cước còn: ${money(r.items[0].amount)}`;
                 
                 if (r.expected != null) {
@@ -41,7 +41,6 @@ function createReport(results) {
                         else if (r.mode === "total") matchText = "✅ Khớp tổng";
                         else matchText = "✅ Khớp";
                     } else {
-                        mismatch++;
                         const sign = r.diff > 0 ? "+" : "";
                         matchText = `⚠ Sai lệch ${sign}${money(r.diff)}`;
                     }
@@ -49,8 +48,8 @@ function createReport(results) {
                 }
                 lines.push(line);
             } else {
-                // Trường hợp nợ nhiều kỳ: Giữ chi tiết các kỳ nhưng bỏ chữ "Cathay"
-                lines.push(`🔴 ${r.policy} - Cước còn: ${money(r.cathay)}`);
+                // Trường hợp cước nhiều kỳ: Đổi "Tổng nợ" thành "Tổng cước còn"
+                lines.push(`🔴 ${r.policy} - Tổng cước còn: ${money(r.cathay)}`);
                 for (const item of r.items) {
                     lines.push(`  • ${item.date} : ${money(item.amount)}`);
                 }
@@ -62,18 +61,18 @@ function createReport(results) {
                         else if (r.mode === "total") matchText = "✅ Khớp tổng";
                         else matchText = "✅ Khớp";
                     } else {
-                        mismatch++;
                         const sign = r.diff > 0 ? "+" : "";
                         matchText = `⚠ Sai lệch ${sign}${money(r.diff)}`;
                     }
                     lines.push(`  [Ghi chú: ${money(r.expected)} | ${matchText}]`);
                 }
             }
-            lines.push(""); // Dòng trống phân cách giữa các đơn chưa thanh toán
+            lines.push(""); // Dòng trống phân cách giữa các đơn
         }
     }
 
-    // 3. Đưa danh sách LỖI (❌) xuống dưới cùng (nếu có)
+    // 3. LỌC DANH SÁCH LỖI (❌) ĐỂ HIỂN THỊ XUỐNG DƯỚI CÙNG (Nếu có)
+    const errorList = results.filter(r => r.error);
     if (errorList.length > 0) {
         for (const r of errorList) {
             lines.push(`❌ ${r.policy} - Lỗi: ${r.error}`);
