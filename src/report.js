@@ -50,7 +50,7 @@ function createReport(results) {
                 lines.push(line);
             } else {
                 // Trường hợp nợ nhiều kỳ: Giữ chi tiết các kỳ nhưng bỏ chữ "Cathay"
-                lines.push(`🔴 ${r.policy} - Tổng nợ: ${money(r.cathay)}`);
+                lines.push(`🔴 ${r.policy} - Cước còn: ${money(r.cathay)}`);
                 for (const item of r.items) {
                     lines.push(`  • ${item.date} : ${money(item.amount)}`);
                 }
