@@ -14,8 +14,7 @@ function money(n) {
 }
 
 /**
- * Hàm bổ trợ: Nếu có cấu hình targetMonth, chỉ giữ lại kỳ cước của tháng đó
- * và tính toán lại toàn bộ thông số (tổng nợ, trạng thái khớp/lệch)
+ * Hàm bổ trợ lọc cước theo tháng chỉ định
  */
 function filterResultsByMonth(results, getTargetMonthFn) {
     for (const r of results) {
@@ -23,16 +22,14 @@ function filterResultsByMonth(results, getTargetMonthFn) {
         
         const targetM = getTargetMonthFn(r.policy);
         if (targetM != null) {
-            // Lọc danh sách nợ từ hệ thống Cathay, chỉ giữ lại tháng trùng khớp
             r.items = r.items.filter(item => {
-                const parts = item.date.split('-'); // Định dạng YYYY-MM-DD
+                const parts = item.date.split('-');
                 if (parts.length >= 2) {
                     return parseInt(parts[1], 10) === targetM;
                 }
                 return false;
             });
             
-            // Tính toán lại các thông số sau khi lọc bỏ tháng thừa
             r.cathay = r.items.reduce((sum, item) => sum + item.amount, 0);
             r.paid = r.items.length === 0;
             
@@ -70,33 +67,54 @@ const client = new Client({
 
 client.once('ready', () => {
     console.log(`🤖 Bot Cathay đã sẵn sàng! Đăng nhập với tên: ${client.user.tag}`);
-    setInterval(autoCheckSubscriptions, 60 * 1000); // Vòng lặp 1 phút
+    setInterval(autoCheckSubscriptions, 60 * 1000); // Vòng lặp quét ngầm 1 phút
 });
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    const list = parsePolicies(message.content);
-    if (list.length === 0) return;
+    let fileText = "";
+
+    // 1. KIỂM TRA XEM TIN NHẮN CÓ ĐÍNH KÈM FILE .TXT KHÔNG
+    const txtAttachment = message.attachments.find(att => att.name.endsWith('.txt'));
+    if (txtAttachment) {
+        try {
+            // Tải và đọc nội dung chữ bên trong file .txt bằng hàm fetch có sẵn của Node.js
+            const response = await fetch(txtAttachment.url);
+            fileText = await response.text();
+            console.log(`[File] Đã nhận và đọc file thành công: ${txtAttachment.name}`);
+        } catch (err) {
+            console.error("Lỗi khi đọc file đính kèm:", err.message);
+            return message.reply("❌ Bot không thể đọc được nội dung file .txt này, vui lòng thử lại!");
+        }
+    }
+
+    // 2. KẾT HỢP CHỮ TRONG TIN NHẮN CHAT VÀ CHỮ TRONG FILE TXT
+    const combinedText = (message.content || "") + "\n" + fileText;
+
+    // Tiến hành phân tích chuỗi tổng hợp
+    const list = parsePolicies(combinedText);
+    if (list.length === 0) return; // Nếu cả file và chat đều không có mã nào thì bỏ qua
 
     await message.channel.sendTyping();
-    const waitMessage = await message.reply("⏳ Phát hiện mã hợp đồng! Đang quét dữ liệu ban đầu, vui lòng đợi...");
+    const waitMessage = await message.reply("⏳ Phát hiện danh sách mã! Đang kết nối hệ thống quét dữ liệu, vui lòng đợi...");
 
     try {
         const cathay = new CathayClient();
         await cathay.init();
         let results = await cathay.checkPolicies(list);
 
-        // ÁP DỤNG BỘ LỌC THÁNG CHO KẾT QUẢ ĐẦU VÀO
+        // Áp dụng bộ lọc tháng
         results = filterResultsByMonth(results, (policy) => {
             const found = list.find(item => item.policy === policy);
             return found ? found.targetMonth : null;
         });
 
+        // Tạo báo cáo (bản mới chỉ hiện đơn lệch/đơn lỗi)
         const report = createReport(results);
         await waitMessage.edit(report);
 
-        // LƯU TRẠNG THÁI VÀO BỘ NHỚ GIÁM SÁT NGẦM
+        // Lưu trạng thái vào bộ nhớ để quét ngầm tự động thông báo đóng phí
         for (const r of results) {
             if (r.error) continue;
 
@@ -111,22 +129,25 @@ client.on('messageCreate', async (message) => {
                 
                 monitoringMap.set(r.policy, {
                     expected: r.expected,
-                    targetMonth: targetMonth, // Lưu kèm cấu hình tháng cần theo dõi
+                    targetMonth: targetMonth,
                     unpaidItems: unpaidItems,
                     channelId: message.channel.id
                 });
-                console.log(`[Giám sát] Đã thêm mã: ${r.policy} (Theo dõi tháng: ${targetMonth || 'Tất cả'})`);
+                console.log(`[Giám sát] Đã thêm mã: ${r.policy} (Tháng theo dõi: ${targetMonth || 'Tất cả'})`);
             } else {
                 monitoringMap.delete(r.policy);
             }
         }
 
     } catch (error) {
-        console.error("Lỗi khi xử lý tin nhắn đầu vào:", error);
-        await waitMessage.edit(`❌ Có lỗi xảy ra: \`${error.message}\``);
+        console.error("Lỗi khi xử lý dữ liệu:", error);
+        await waitMessage.edit(`❌ Có lỗi xảy ra trong quá trình xử lý: \`${error.message}\``);
     }
 });
 
+/**
+ * Hàm quét ngầm tự động mỗi phút
+ */
 async function autoCheckSubscriptions() {
     if (monitoringMap.size === 0) return;
 
@@ -142,7 +163,6 @@ async function autoCheckSubscriptions() {
         await cathay.init();
         let results = await cathay.checkPolicies(listToCheck);
 
-        // ÁP DỤNG BỘ LỌC THÁNG KHI QUÉT NGẦM
         results = filterResultsByMonth(results, (policy) => {
             const saved = monitoringMap.get(policy);
             return saved ? saved.targetMonth : null;
