@@ -75,26 +75,21 @@ client.on('messageCreate', async (message) => {
 
     let fileText = "";
 
-    // 1. KIỂM TRA XEM TIN NHẮN CÓ ĐÍNH KÈM FILE .TXT KHÔNG
+    // Đọc file đính kèm nếu có (vẫn giữ để bot linh hoạt nhận cả file lẫn chữ chat)
     const txtAttachment = message.attachments.find(att => att.name.endsWith('.txt'));
     if (txtAttachment) {
         try {
-            // Tải và đọc nội dung chữ bên trong file .txt bằng hàm fetch có sẵn của Node.js
             const response = await fetch(txtAttachment.url);
             fileText = await response.text();
-            console.log(`[File] Đã nhận và đọc file thành công: ${txtAttachment.name}`);
         } catch (err) {
             console.error("Lỗi khi đọc file đính kèm:", err.message);
-            return message.reply("❌ Bot không thể đọc được nội dung file .txt này, vui lòng thử lại!");
         }
     }
 
-    // 2. KẾT HỢP CHỮ TRONG TIN NHẮN CHAT VÀ CHỮ TRONG FILE TXT
     const combinedText = (message.content || "") + "\n" + fileText;
 
-    // Tiến hành phân tích chuỗi tổng hợp
     const list = parsePolicies(combinedText);
-    if (list.length === 0) return; // Nếu cả file và chat đều không có mã nào thì bỏ qua
+    if (list.length === 0) return;
 
     await message.channel.sendTyping();
     const waitMessage = await message.reply("⏳ Phát hiện danh sách mã! Đang kết nối hệ thống quét dữ liệu, vui lòng đợi...");
@@ -110,11 +105,29 @@ client.on('messageCreate', async (message) => {
             return found ? found.targetMonth : null;
         });
 
-        // Tạo báo cáo (bản mới chỉ hiện đơn lệch/đơn lỗi)
+        // 1. Gửi tin nhắn báo cáo chính (Bản hiển thị ngắn gọn đơn lệch/lỗi)
         const report = createReport(results);
         await waitMessage.edit(report);
 
-        // Lưu trạng thái vào bộ nhớ để quét ngầm tự động thông báo đóng phí
+        // 2. TỰ ĐỘNG TẠO TIN NHẮN RIÊNG CHỨA CÁC MÃ CHƯA THANH TOÁN ĐỂ COPY
+        const copyableLines = [];
+        for (const r of results) {
+            if (r.error || r.paid) continue;
+            
+            // Duyệt qua từng kỳ cước chưa đóng của mã hợp đồng này
+            for (const item of r.items) {
+                const month = parseInt(item.date.split('-')[1], 10);
+                // Định dạng chuẩn: Mã_HD (thángX) Số_Tiền
+                copyableLines.push(`${r.policy} (tháng${month}) ${money(item.amount)}`);
+            }
+        }
+
+        // Nếu có đơn chưa thanh toán, bắn thêm 1 tin nhắn riêng biệt ngay phía dưới
+        if (copyableLines.length > 0) {
+            await message.channel.send(copyableLines.join('\n'));
+        }
+
+        // 3. Lưu trạng thái vào bộ nhớ để chạy quét ngầm 1 phút/lần
         for (const r of results) {
             if (r.error) continue;
 
