@@ -13,7 +13,7 @@ function money(n) {
 }
 
 /**
- * Bộ lọc cước thông minh: Chỉ giữ lại kỳ cước thuộc tháng chỉ định
+ * Bộ lọc cước theo tháng chỉ định
  */
 function filterResultsByMonth(results) {
     if (!results || !Array.isArray(results)) return [];
@@ -21,11 +21,10 @@ function filterResultsByMonth(results) {
     for (const r of results) {
         if (!r || r.error) continue;
         
-        // Nếu dòng này có chỉ định tháng cụ thể (ví dụ: tháng 6)
         if (r.targetMonth != null && Array.isArray(r.items)) {
             r.items = r.items.filter(item => {
                 if (!item || !item.date) return false;
-                const parts = item.date.split('-'); // YYYY-MM-DD
+                const parts = item.date.split('-');
                 if (parts.length >= 2) {
                     return parseInt(parts[1], 10) === r.targetMonth;
                 }
@@ -33,7 +32,6 @@ function filterResultsByMonth(results) {
             });
         }
         
-        // Tính toán lại tổng số tiền và trạng thái Đóng/Nợ sau khi lọc cước tháng
         r.cathay = r.items ? r.items.reduce((sum, item) => sum + (item.amount || 0), 0) : 0;
         r.paid = !r.items || r.items.length === 0;
         
@@ -48,7 +46,6 @@ function filterResultsByMonth(results) {
     return results;
 }
 
-// Khởi tạo Web Server giữ mạng Render
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.write("Bot Cathay đang chạy ổn định!");
@@ -96,22 +93,21 @@ client.on('messageCreate', async (message) => {
             await cathay.init();
             let results = await cathay.checkPolicies(list);
 
-            // SỬA LỖI TRÙNG LẶP: Ép cấu hình ghim tháng 1:1 theo đúng vị trí hàng đầu vào
-            for (let i = 0; i < results.length; i++) {
-                if (results[i] && list[i]) {
-                    results[i].targetMonth = list[i].targetMonth;
-                    results[i].expected = list[i].expected;
+            // TÌM CẤU HÌNH THEO MÃ (TRÁNH LỆCH INDEX KHI CATHAY SẮP XẾP LẠI KẾT QUẢ)
+            for (const r of results) {
+                if (!r) continue;
+                const inputItem = list.find(item => item.policy === r.policy);
+                if (inputItem) {
+                    r.targetMonth = inputItem.targetMonth;
+                    r.expected = inputItem.expected;
                 }
             }
 
-            // Chạy bộ lọc cước tháng bảo vệ danh sách
             results = filterResultsByMonth(results);
 
-            // 1. Trả lời bảng kết quả chi tiết đúng chuẩn form gom nhóm mới của bạn
             const report = createReport(results);
             await waitMessage.edit(report);
 
-            // 2. Tạo khối tin nhắn copy nhanh (chỉ chứa các tháng được chú ý và chưa đóng)
             const copyableLines = [];
             for (const r of results) {
                 if (!r || r.error || r.paid || !Array.isArray(r.items)) continue;
@@ -127,9 +123,7 @@ client.on('messageCreate', async (message) => {
                 await message.channel.send(copyableLines.join('\n'));
             }
 
-            // 3. Đưa vào hàng đợi giám sát tự động
-            for (let i = 0; i < results.length; i++) {
-                const r = results[i];
+            for (const r of results) {
                 if (!r || r.error) continue;
 
                 if (!r.paid && Array.isArray(r.items)) {
@@ -151,20 +145,30 @@ client.on('messageCreate', async (message) => {
     } catch (globalError) { console.error(globalError); }
 });
 
+/**
+ * Quét ngầm tự động - Đã sửa lỗi tra cứu cấu hình theo Key Map
+ */
 async function autoCheckSubscriptions() {
     if (monitoringMap.size === 0) return;
+    
     const listToCheck = Array.from(monitoringMap.entries()).map(([policy, data]) => ({
-        policy: policy, expected: data.expected, targetMonth: data.targetMonth
+        policy: policy, 
+        expected: data.expected, 
+        targetMonth: data.targetMonth
     }));
+
     try {
         const cathay = new CathayClient();
         await cathay.init();
         let results = await cathay.checkPolicies(listToCheck);
-        
-        for (let i = 0; i < results.length; i++) {
-            if (results[i] && listToCheck[i]) {
-                results[i].targetMonth = listToCheck[i].targetMonth;
-                results[i].expected = listToCheck[i].expected;
+
+        // KHẮC PHỤC LỖI: Lấy trực tiếp từ Map dựa trên tên mã r.policy
+        for (const r of results) {
+            if (!r || r.error) continue;
+            const savedData = monitoringMap.get(r.policy);
+            if (savedData) {
+                r.targetMonth = savedData.targetMonth;
+                r.expected = savedData.expected;
             }
         }
 
@@ -174,29 +178,37 @@ async function autoCheckSubscriptions() {
             if (!r || r.error) continue;
             const savedData = monitoringMap.get(r.policy);
             if (!savedData) continue;
+
             const channel = await client.channels.fetch(savedData.channelId).catch(() => null);
             if (!channel) continue;
 
             if (r.paid) {
                 for (const oldItem of savedData.unpaidItems) {
-                    await channel.send(`🎉 **Mã ${r.policy}** (${money(oldItem.amount)}) đã thanh toán cước **tháng ${parseInt(oldItem.date.split('-')[1], 10)}**!`);
+                    const month = parseInt(oldItem.date.split('-')[1], 10);
+                    await channel.send(`🎉 **Mã ${r.policy}** (${money(oldItem.amount)}) đã thanh toán cước **tháng ${month}**!`);
                 }
                 monitoringMap.delete(r.policy);
             } else {
                 const currentUnpaidDates = Array.isArray(r.items) ? r.items.map(item => item.date) : [];
+                
                 for (const oldItem of savedData.unpaidItems) {
                     if (!currentUnpaidDates.includes(oldItem.date)) {
-                        await channel.send(`🎉 **Mã ${r.policy}** (${money(oldItem.amount)}) đã thanh toán cước **tháng ${parseInt(oldItem.date.split('-')[1], 10)}**!`);
+                        const month = parseInt(oldItem.date.split('-')[1], 10);
+                        await channel.send(`🎉 **Mã ${r.policy}** (${money(oldItem.amount)}) đã thanh toán cước **tháng ${month}**!`);
                     }
                 }
-                if (currentUnpaidDates.length === 0) monitoringMap.delete(r.policy);
-                else {
+
+                if (currentUnpaidDates.length === 0) {
+                    monitoringMap.delete(r.policy);
+                } else {
                     savedData.unpaidItems = r.items.map(item => ({ date: item.date, amount: item.amount }));
                     monitoringMap.set(r.policy, savedData);
                 }
             }
         }
-    } catch (err) { console.error(err.message); }
+    } catch (err) { 
+        console.error("[Auto-Check] Lỗi quét ngầm:", err.message); 
+    }
 }
 
 if (process.env.DISCORD_TOKEN) {
