@@ -1,20 +1,45 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const http = require('http');
+const { Redis } = require('@upstash/redis');
 
 const CathayClient = require("./src/CathayClient");
 const { parsePolicies } = require("./src/parser");
 const createReport = require("./src/report");
 
-const monitoringMap = new Map();
+// 1. Khởi tạo kết nối Redis từ biến môi trường của Render
+const redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+// Bộ công cụ thao tác dữ liệu Cloud thay thế Map
+const dbHelper = {
+    async set(policy, data) {
+        await redis.hset('cathay_monitoring', { [policy]: JSON.stringify(data) });
+    },
+    async delete(policy) {
+        await redis.hdel('cathay_monitoring', policy);
+    },
+    async get(policy) {
+        const raw = await redis.hget('cathay_monitoring', policy);
+        if (!raw) return null;
+        return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    },
+    async getAll() {
+        const raw = await redis.hgetall('cathay_monitoring');
+        if (!raw) return [];
+        return Object.entries(raw).map(([policy, data]) => {
+            const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+            return { policy, ...parsed };
+        });
+    }
+};
 
 function money(n) {
     return new Intl.NumberFormat("vi-VN").format(n) + "đ";
 }
 
-/**
- * Bộ lọc cước theo tháng chỉ định
- */
 function filterResultsByMonth(results) {
     if (!results || !Array.isArray(results)) return [];
     
@@ -93,7 +118,6 @@ client.on('messageCreate', async (message) => {
             await cathay.init();
             let results = await cathay.checkPolicies(list);
 
-            // TÌM CẤU HÌNH THEO MÃ (TRÁNH LỆCH INDEX KHI CATHAY SẮP XẾP LẠI KẾT QUẢ)
             for (const r of results) {
                 if (!r) continue;
                 const inputItem = list.find(item => item.policy === r.policy);
@@ -123,18 +147,19 @@ client.on('messageCreate', async (message) => {
                 await message.channel.send(copyableLines.join('\n'));
             }
 
+            // Lưu danh sách theo dõi vào Cloud Redis
             for (const r of results) {
                 if (!r || r.error) continue;
 
                 if (!r.paid && Array.isArray(r.items)) {
-                    monitoringMap.set(r.policy, {
+                    await dbHelper.set(r.policy, {
                         expected: r.expected,
                         targetMonth: r.targetMonth,
                         unpaidItems: r.items.map(item => ({ date: item.date, amount: item.amount })),
                         channelId: message.channel.id
                     });
                 } else {
-                    monitoringMap.delete(r.policy);
+                    await dbHelper.delete(r.policy);
                 }
             }
 
@@ -145,14 +170,13 @@ client.on('messageCreate', async (message) => {
     } catch (globalError) { console.error(globalError); }
 });
 
-/**
- * Quét ngầm tự động - Đã sửa lỗi tra cứu cấu hình theo Key Map
- */
 async function autoCheckSubscriptions() {
-    if (monitoringMap.size === 0) return;
-    
-    const listToCheck = Array.from(monitoringMap.entries()).map(([policy, data]) => ({
-        policy: policy, 
+    // Lấy danh sách hợp đồng cần quét từ Cloud Redis
+    const savedList = await dbHelper.getAll();
+    if (savedList.length === 0) return;
+
+    const listToCheck = savedList.map(data => ({
+        policy: data.policy, 
         expected: data.expected, 
         targetMonth: data.targetMonth
     }));
@@ -162,10 +186,9 @@ async function autoCheckSubscriptions() {
         await cathay.init();
         let results = await cathay.checkPolicies(listToCheck);
 
-        // KHẮC PHỤC LỖI: Lấy trực tiếp từ Map dựa trên tên mã r.policy
         for (const r of results) {
             if (!r || r.error) continue;
-            const savedData = monitoringMap.get(r.policy);
+            const savedData = await dbHelper.get(r.policy);
             if (savedData) {
                 r.targetMonth = savedData.targetMonth;
                 r.expected = savedData.expected;
@@ -176,7 +199,7 @@ async function autoCheckSubscriptions() {
 
         for (const r of results) {
             if (!r || r.error) continue;
-            const savedData = monitoringMap.get(r.policy);
+            const savedData = await dbHelper.get(r.policy);
             if (!savedData) continue;
 
             const channel = await client.channels.fetch(savedData.channelId).catch(() => null);
@@ -187,7 +210,7 @@ async function autoCheckSubscriptions() {
                     const month = parseInt(oldItem.date.split('-')[1], 10);
                     await channel.send(`🎉 **Mã ${r.policy}** (${money(oldItem.amount)}) đã thanh toán cước **tháng ${month}**!`);
                 }
-                monitoringMap.delete(r.policy);
+                await dbHelper.delete(r.policy);
             } else {
                 const currentUnpaidDates = Array.isArray(r.items) ? r.items.map(item => item.date) : [];
                 
@@ -199,10 +222,10 @@ async function autoCheckSubscriptions() {
                 }
 
                 if (currentUnpaidDates.length === 0) {
-                    monitoringMap.delete(r.policy);
+                    await dbHelper.delete(r.policy);
                 } else {
                     savedData.unpaidItems = r.items.map(item => ({ date: item.date, amount: item.amount }));
-                    monitoringMap.set(r.policy, savedData);
+                    await dbHelper.set(r.policy, savedData);
                 }
             }
         }
