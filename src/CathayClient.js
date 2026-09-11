@@ -39,7 +39,6 @@ class CathayClient {
     }
 
     async checkPolicy(policyNo) {
-
         const body = new URLSearchParams({
             polNum: policyNo,
             "g-recaptcha-response": ""
@@ -62,127 +61,112 @@ class CathayClient {
         return response.data;
     }
 
-        parseResult(data) {
-
-            if (data.rtnCode === 1005) {
-                return {
-                    paid: true,
-                    total: 0,
-                    items: []
-                };
-            }
-
-            const premiums = (data.rtnList || [])
-                .filter(x => x.FEE_TYPE === "2")
-                .map(x => ({
-                    date: x.OUGHT_PAY_DATE,
-                    amount: Number(x.PREM)
-                }));
-
-            return {
-                paid: false,
-                total: premiums.reduce((s, p) => s + p.amount, 0),
-                items: premiums
-            };
-
+    parseResult(data) {
+        if (!data || typeof data !== 'object') {
+            throw new Error("Phản hồi API không hợp lệ");
         }
 
-        compareAmount(expected, parsed) {
+        // Mã 1005: Cathay xác nhận chính thức hợp đồng không còn cước nợ
+        if (data.rtnCode === 1005) {
+            return {
+                isOfficialPaid: true,
+                paid: true,
+                total: 0,
+                items: []
+            };
+        }
 
-            if (parsed.paid) {
+        // Nếu API không trả về mảng rtnList -> Cookie bị lỗi hoặc Cathay chặn request
+        if (!Array.isArray(data.rtnList)) {
+            throw new Error("Mất kết nối API Cathay (Cookie hết hạn hoặc bị chặn)");
+        }
+
+        const premiums = data.rtnList
+            .filter(x => x.FEE_TYPE === "2")
+            .map(x => ({
+                date: x.OUGHT_PAY_DATE,
+                amount: Number(x.PREM)
+            }));
+
+        return {
+            isOfficialPaid: false,
+            paid: premiums.length === 0,
+            total: premiums.reduce((s, p) => s + p.amount, 0),
+            items: premiums
+        };
+    }
+
+    compareAmount(expected, parsed) {
+        if (parsed.paid) {
+            return {
+                match: true,
+                diff: 0,
+                mode: "paid"
+            };
+        }
+
+        if (expected == null) {
+            return {
+                match: null,
+                diff: 0,
+                mode: "unknown"
+            };
+        }
+
+        for (const item of parsed.items) {
+            if (item.amount === expected) {
                 return {
                     match: true,
                     diff: 0,
-                    mode: "paid"
+                    mode: "single"
                 };
             }
-
-            if (expected == null) {
-                return {
-                    match: null,
-                    diff: 0,
-                    mode: "unknown"
-                };
-            }
-
-            // Khớp với từng kỳ
-            for (const item of parsed.items) {
-                if (item.amount === expected) {
-                    return {
-                        match: true,
-                        diff: 0,
-                        mode: "single"
-                    };
-                }
-            }
-
-            // Khớp tổng nhiều kỳ
-            if (parsed.total === expected) {
-                return {
-                    match: true,
-                    diff: 0,
-                    mode: "total"
-                };
-            }
-
-            return {
-                match: false,
-                diff: parsed.total - expected,
-                mode: "mismatch"
-            };
-
         }
+
+        if (parsed.total === expected) {
+            return {
+                match: true,
+                diff: 0,
+                mode: "total"
+            };
+        }
+
+        return {
+            match: false,
+            diff: parsed.total - expected,
+            mode: "mismatch"
+        };
+    }
 
     async checkPolicies(policyList) {
-
         const results = [];
 
         for (const item of policyList) {
-
             try {
-
                 const raw = await this.checkPolicy(item.policy);
-
                 const parsed = this.parseResult(raw);
-
                 const compare = this.compareAmount(item.expected, parsed);
 
                 results.push({
-
                     policy: item.policy,
-
                     expected: item.expected,
-
+                    isOfficialPaid: parsed.isOfficialPaid,
                     paid: parsed.paid,
-
                     cathay: parsed.total,
-
                     items: parsed.items,
-
                     match: compare.match,
-
                     diff: compare.diff,
-
                     mode: compare.mode
-
                 });
-
             } catch (err) {
-
                 results.push({
-
                     policy: item.policy,
-
                     error: err.message
-
                 });
-
             }
-
         }
 
         return results;
-
     }
 }
 
