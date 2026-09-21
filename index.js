@@ -97,11 +97,13 @@ const client = new Client({
     ]
 });
 
-// Chỉ giữ lại 1 listener clientReady duy nhất
-client.once('clientReady', (c) => {
-    console.log(`🤖 Bot Cathay đã online thành công: ${c.user.tag}`);
+// SỬA LỖI 1: Đổi tên sự kiện thành 'ready' chuẩn của discord.js
+client.once('ready', (c) => {
+    console.log(`🟢 Bot Cathay đã online thành công với tên: ${c.user.tag}`);
+    
+    // SỬA LỖI 2: Giãn thời gian quét ngầm từ 1 phút thành 5 phút (5 * 60 * 1000)
     if (!client.autoCheckInterval) {
-        client.autoCheckInterval = setInterval(autoCheckSubscriptions, 60 * 1000);
+        client.autoCheckInterval = setInterval(autoCheckSubscriptions, 5 * 60 * 1000);
     }
 });
 
@@ -148,7 +150,7 @@ client.on('messageCreate', async (message) => {
                 for (const item of r.items) {
                     if (!item || !item.date) continue;
                     const month = parseInt(item.date.split('-')[1], 10);
-                    copyableLines.push(`${r.policy} (tháng${month}) ${money(item.amount || 0)}`);
+                    copyableLines.push(`${r.policy} (tháng${month})${money(item.amount || 0)}`);
                 }
             }
 
@@ -234,6 +236,12 @@ async function autoCheckSubscriptions() {
     }
 }
 
-if (process.env.DISCORD_TOKEN) {
-    client.login(process.env.DISCORD_TOKEN).catch(err => console.error(err.message));
+// SỬA LỖI 3: Kiểm tra và in báo lỗi nếu Render thiếu biến DISCORD_TOKEN
+const TOKEN = process.env.DISCORD_TOKEN;
+if (!TOKEN) {
+    console.error("🔴 [LỖI] DISCORD_TOKEN đang bị thiếu trên Render! Hãy kiểm tra tab Environment.");
+} else {
+    client.login(TOKEN).catch((err) => {
+        console.error("🔴 [LỖI ĐĂNG NHẬP DISCORD]:", err.message);
+    });
 }
