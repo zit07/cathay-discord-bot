@@ -2,7 +2,6 @@ function parsePolicies(text) {
     if (!text) return [];
     const lines = text.split('\n');
     const results = [];
-    const seenKeys = new Set(); // Bộ lọc lưu các mã đã xử lý
     
     for (let line of lines) {
         line = line.trim();
@@ -29,29 +28,22 @@ function parsePolicies(text) {
         
         let expected = null;
         if (amountMatch) {
-            let rawAmount = amountMatch[1].replace(/\./g, ''); // Xóa dấu chấm phân cách
+            let rawAmount = amountMatch[1].replace(/\./g, ''); // Xóa dấu chấm phân cách (2.384 -> 2384)
             let num = parseFloat(rawAmount);
             
             const unit = amountMatch[2] ? amountMatch[2].toLowerCase() : '';
-            // Tự động nhân 1000 nếu có chữ 'k' hoặc số viết tắt nhỏ hơn 10000
+            // Tự động nhân 1000 nếu có chữ 'k' hoặc số viết tắt nhỏ hơn 10000 (1497 -> 1.497.000)
             if (unit === 'k' || num < 10000) {
                 num = num * 1000;
             }
             expected = num;
         }
-
-        // Khóa định danh kết hợp mã hợp đồng và tháng cần lọc
-        const uniqueKey = `${policy}_${targetMonth || 'all'}`;
-
-        // Chỉ thêm vào danh sách nếu chưa tồn tại
-        if (!seenKeys.has(uniqueKey)) {
-            seenKeys.add(uniqueKey);
-            results.push({
-                policy,
-                expected,
-                targetMonth
-            });
-        }
+        
+        results.push({
+            policy,
+            expected,
+            targetMonth // Trả thêm thông tin tháng cần lọc
+        });
     }
     
     return results;
