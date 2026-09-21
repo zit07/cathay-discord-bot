@@ -1,4 +1,14 @@
 require('dotenv').config();
+
+// FIX LỖI TREO KẾT NỐI TRÊN RENDER: Ưu tiên IPv4 thay vì IPv6
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder('ipv4first');
+}
+
+const { Client, GatewayIntentBits } = require('discord.js');
+const http = require('http');
+// ... giữ nguyên phần còn lại
 const { Client, GatewayIntentBits } = require('discord.js');
 const http = require('http');
 const { Redis } = require('@upstash/redis');
@@ -96,6 +106,10 @@ const client = new Client({
         GatewayIntentBits.MessageContent 
     ]
 });
+
+// Bắt lỗi kết nối Gateway ngầm
+client.on('error', (err) => console.error('❌ [LỖI CLIENT]:', err.message));
+client.on('shardError', (error) => console.error('❌ [LỖI GATEWAY WEBSOCKET]:', error.message));
 
 // Sử dụng sự kiện 'ready' chuẩn của discord.js
 client.once('ready', (c) => {
