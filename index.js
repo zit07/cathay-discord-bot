@@ -231,6 +231,7 @@ async function autoCheckSubscriptions() {
     }
 }
 
+
 // Bắt lỗi đăng nhập Discord rõ ràng
 const TOKEN = process.env.DISCORD_TOKEN;
 
