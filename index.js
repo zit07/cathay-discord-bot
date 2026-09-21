@@ -251,8 +251,7 @@ const handleOnline = () => {
 client.once("ready", handleOnline);
 client.once("clientReady", handleOnline);
 
-// 2. Lấy Token và tự động lọc bỏ khoảng trắng / dấu ngoặc kép thừa
-// 2. Lấy Token và tự động lọc bỏ khoảng trắng / dấu ngoặc kép thừa
+// Lấy Token và tự động lọc bỏ khoảng trắng / dấu ngoặc kép thừa
 const rawToken = process.env.DISCORD_TOKEN;
 const TOKEN = rawToken ? rawToken.trim().replace(/^["']|["']$/g, '') : null;
 
@@ -261,19 +260,23 @@ if (!TOKEN) {
 } else {
     console.log(`⏳ Đang kết nối tới Discord Gateway (Token length: ${TOKEN.length})...`);
 
-    // TEST CHẨN ĐOÁN: Kiểm tra phản hồi HTTP API Discord trước khi mở WebSocket
+    // TEST CHẨN ĐOÁN CHI TIẾT
     fetch('https://discord.com/api/v10/users/@me', {
-        headers: { Authorization: `Bot ${TOKEN}` }
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.id) {
-            console.log(`✅ [XÁC NHẬN TOKEN] Kết nối API thành công! Bot Name: ${data.username}#${data.discriminator} (ID: ${data.id})`);
-        } else {
-            console.error(`❌ [LỖI TOKEN]: Discord từ chối Token!`, data);
+        headers: { 
+            'Authorization': `Bot ${TOKEN}`,
+            'User-Agent': 'DiscordBot (https://github.com/discordjs/discord.js, 14.14.0)'
         }
     })
-    .catch(err => console.error(`❌ [LỖI MẠNG HTTP]: Không thể gọi Discord API:`, err.message));
+    .then(async (res) => {
+        const text = await res.text();
+        if (res.ok) {
+            const data = JSON.parse(text);
+            console.log(`✅ [XÁC NHẬN TOKEN] Kết nối API thành công! Bot Name: ${data.username}#${data.discriminator}`);
+        } else {
+            console.error(`❌ [LỖI DISCORD API - Status ${res.status}]:`, text.substring(0, 200));
+        }
+    })
+    .catch(err => console.error(`❌ [LỖI MẠNG HTTP]:`, err.message));
 
     // Thực hiện đăng nhập WebSocket
     client.login(TOKEN).catch((err) => {
