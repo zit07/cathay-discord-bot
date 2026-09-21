@@ -8,9 +8,6 @@ if (dns.setDefaultResultOrder) {
 
 const { Client, GatewayIntentBits } = require('discord.js');
 const http = require('http');
-// ... giữ nguyên phần còn lại
-const { Client, GatewayIntentBits } = require('discord.js');
-const http = require('http');
 const { Redis } = require('@upstash/redis');
 
 const CathayClient = require("./src/CathayClient");
