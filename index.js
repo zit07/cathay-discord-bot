@@ -97,11 +97,11 @@ const client = new Client({
     ]
 });
 
-// SỬA LỖI 1: Đổi tên sự kiện thành 'ready' chuẩn của discord.js
+// Sử dụng sự kiện 'ready' chuẩn của discord.js
 client.once('ready', (c) => {
     console.log(`🟢 Bot Cathay đã online thành công với tên: ${c.user.tag}`);
     
-    // SỬA LỖI 2: Giãn thời gian quét ngầm từ 1 phút thành 5 phút (5 * 60 * 1000)
+    // Giãn thời gian quét ngầm thành 5 phút (5 * 60 * 1000)
     if (!client.autoCheckInterval) {
         client.autoCheckInterval = setInterval(autoCheckSubscriptions, 5 * 60 * 1000);
     }
@@ -185,7 +185,6 @@ async function autoCheckSubscriptions() {
     const savedList = await dbHelper.getAll();
     if (savedList.length === 0) return;
 
-    // Chỉ quét các mã gốc, không truyền targetMonth để lấy toàn bộ danh sách nợ từ Cathay
     const listToCheck = savedList.map(data => ({
         policy: data.policy, 
         expected: data.expected
@@ -197,7 +196,6 @@ async function autoCheckSubscriptions() {
         let results = await cathay.checkPolicies(listToCheck);
 
         for (const r of results) {
-            // Nếu API bị lỗi (mất cookie/captcha), bỏ qua lượt quét này, tuyệt đối không báo ảo
             if (!r || r.error) {
                 console.log(`[Auto-Check] Bỏ qua mã ${r?.policy || 'unknown'} do lỗi API: ${r?.error}`);
                 continue;
@@ -212,9 +210,7 @@ async function autoCheckSubscriptions() {
             const currentUnpaidDates = Array.isArray(r.items) ? r.items.map(item => item.date) : [];
             const remainingUnpaidItems = [];
 
-            // Kiểm tra từng khoản nợ đã lưu trước đó
             for (const oldItem of savedData.unpaidItems) {
-                // Nếu Cathay chính thức báo hết nợ (isOfficialPaid) HOẶC khoản nợ cũ không còn nằm trong danh sách cước thực tế từ Cathay
                 if (r.isOfficialPaid || !currentUnpaidDates.includes(oldItem.date)) {
                     const month = parseInt(oldItem.date.split('-')[1], 10);
                     await channel.send(`🎉 **Mã ${r.policy}** (${money(oldItem.amount)}) đã thanh toán cước **tháng ${month}**!`);
@@ -223,7 +219,6 @@ async function autoCheckSubscriptions() {
                 }
             }
 
-            // Cập nhật lại Redis
             if (remainingUnpaidItems.length === 0 || r.isOfficialPaid) {
                 await dbHelper.delete(r.policy);
             } else {
@@ -236,8 +231,9 @@ async function autoCheckSubscriptions() {
     }
 }
 
-// SỬA LỖI 3: Kiểm tra và in báo lỗi nếu Render thiếu biến DISCORD_TOKEN
+// Bắt lỗi đăng nhập Discord rõ ràng
 const TOKEN = process.env.DISCORD_TOKEN;
+
 if (!TOKEN) {
     console.error("🔴 [LỖI] DISCORD_TOKEN đang bị thiếu trên Render! Hãy kiểm tra tab Environment.");
 } else {
