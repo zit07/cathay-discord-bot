@@ -232,13 +232,23 @@ async function autoCheckSubscriptions() {
 }
 
 
-// Bắt lỗi đăng nhập Discord rõ ràng
-const TOKEN = process.env.DISCORD_TOKEN;
+// 1. Đăng ký sự kiện Ready TRƯỚC KHI gọi login (hỗ trợ cả chuẩn cũ lẫn v15)
+const handleOnline = () => {
+    console.log(`🟢 Bot Cathay đã online thành công với tên: ${client.user?.tag}`);
+};
+
+client.once("ready", handleOnline);
+client.once("clientReady", handleOnline);
+
+// 2. Lấy Token và tự động lọc bỏ khoảng trắng / dấu ngoặc kép thừa
+const rawToken = process.env.DISCORD_TOKEN;
+const TOKEN = rawToken ? rawToken.trim().replace(/^["']|["']$/g, '') : null;
 
 if (!TOKEN) {
-    console.error("🔴 [LỖI] DISCORD_TOKEN đang bị thiếu trên Render! Hãy kiểm tra tab Environment.");
+    console.error("❌ [LỖI] DISCORD_TOKEN đang bị thiếu trên Render! Hãy kiểm tra tab Environment.");
 } else {
+    console.log(`⏳ Đang kết nối tới Discord Gateway (Token length: ${TOKEN.length})...`);
     client.login(TOKEN).catch((err) => {
-        console.error("🔴 [LỖI ĐĂNG NHẬP DISCORD]:", err.message);
+        console.error("❌ [LỖI ĐĂNG NHẬP DISCORD]:", err.message);
     });
 }
