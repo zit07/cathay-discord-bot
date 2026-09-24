@@ -1,3 +1,4 @@
+//hii test uptade
 require('dotenv').config();
 
 // FIX LỖI TREO KẾT NỐI TRÊN RENDER: Ưu tiên IPv4 thay vì IPv6
