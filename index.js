@@ -114,7 +114,7 @@ client.once('ready', (c) => {
     
     // Giãn thời gian quét ngầm thành 5 phút (5 * 60 * 1000)
     if (!client.autoCheckInterval) {
-        client.autoCheckInterval = setInterval(autoCheckSubscriptions, 5 * 60 * 1000);
+        client.autoCheckInterval = setInterval(autoCheckSubscriptions, 1 * 60 * 1000);
     }
 });
 
