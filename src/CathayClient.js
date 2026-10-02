@@ -77,26 +77,29 @@ class CathayClient {
             };
         }
 
-        // Nếu API không trả về mảng rtnList -> Cookie bị lỗi hoặc Cathay chặn request
+        // Nếu API không trả về mảng rtnList -> Mất kết nối hoặc sai định dạng
         if (!Array.isArray(data.rtnList)) {
             throw new Error("Mất kết nối API Cathay (Cookie hết hạn hoặc bị chặn)");
         }
 
+        // KHẮC PHỤC: Lấy tất cả các khoản cước có số tiền PREM > 0 (chấp nhận cả FEE_TYPE "1", "2", ...)
         const premiums = data.rtnList
-            .filter(x => x.FEE_TYPE === "2")
+            .filter(x => x.PREM && Number(x.PREM) > 0)
             .map(x => ({
                 date: x.OUGHT_PAY_DATE,
-                amount: Number(x.PREM)
+                amount: Number(x.PREM),
+                feeType: x.FEE_TYPE
             }));
 
         return {
             isOfficialPaid: false,
+            // Chỉ ghi nhận "Đã thanh toán" khi danh sách cước thực sự rỗng
             paid: premiums.length === 0,
             total: premiums.reduce((s, p) => s + p.amount, 0),
             items: premiums
         };
     }
-
+    
     compareAmount(expected, parsed) {
         if (parsed.paid) {
             return {
