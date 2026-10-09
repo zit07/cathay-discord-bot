@@ -195,7 +195,7 @@ client.on('messageCreate', async (message) => {
 
 async function autoCheckSubscriptions() {
     const savedList = await dbHelper.getAll();
-    if (savedList.length === 0) return;
+    if (!savedList || savedList.length === 0) return;
 
     const listToCheck = savedList.map(data => ({
         policy: data.policy, 
@@ -221,16 +221,28 @@ async function autoCheckSubscriptions() {
 
             const currentUnpaidDates = Array.isArray(r.items) ? r.items.map(item => item.date) : [];
             const remainingUnpaidItems = [];
+            const paidItemsByMonth = {}; // Gom tổng tiền đã trả theo tháng { 10: 1112000 }
 
-            for (const oldItem of savedData.unpaidItems) {
+            const oldUnpaidList = Array.isArray(savedData.unpaidItems) ? savedData.unpaidItems : [];
+
+            for (const oldItem of oldUnpaidList) {
+                if (!oldItem || !oldItem.date) continue;
+
+                // Nếu Cathay báo đã thanh toán (hoặc khoản cước cũ không còn nằm trong danh sách nợ)
                 if (r.isOfficialPaid || !currentUnpaidDates.includes(oldItem.date)) {
                     const month = parseInt(oldItem.date.split('-')[1], 10);
-                    await channel.send(`🎉 **Mã ${r.policy}** (${money(oldItem.amount)}) đã thanh toán cước **tháng ${month}**!`);
+                    paidItemsByMonth[month] = (paidItemsByMonth[month] || 0) + (oldItem.amount || 0);
                 } else {
                     remainingUnpaidItems.push(oldItem);
                 }
             }
 
+            // Gửi thông báo đã gom nhóm theo từng tháng
+            for (const [month, totalAmount] of Object.entries(paidItemsByMonth)) {
+                await channel.send(`✅ **Mã ${r.policy}** (${money(totalAmount)}) đã được thanh toán cước **tháng ${month}**!`);
+            }
+
+            // Cập nhật lại cơ sở dữ liệu Redis
             if (remainingUnpaidItems.length === 0 || r.isOfficialPaid) {
                 await dbHelper.delete(r.policy);
             } else {
