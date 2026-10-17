@@ -9,20 +9,17 @@ if (dns.setDefaultResultOrder) {
 
 const { Client, GatewayIntentBits } = require('discord.js');
 const http = require('http');
-const { Redis } = require('@upstash/redis');
+
+const Redis = require('ioredis');
+const redis = new Redis(); // Mặc định kết nối tới localhost:6379
 
 const CathayClient = require("./src/CathayClient");
 const { parsePolicies } = require("./src/parser");
 const createReport = require("./src/report");
 
-const redis = new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
-
 const dbHelper = {
     async set(policy, data) {
-        await redis.hset('cathay_monitoring', { [policy]: JSON.stringify(data) });
+        await redis.hset('cathay_monitoring', policy, JSON.stringify(data));
     },
     async delete(policy) {
         await redis.hdel('cathay_monitoring', policy);
