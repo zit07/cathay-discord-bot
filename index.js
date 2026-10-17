@@ -127,8 +127,17 @@ client.on('messageCreate', async (message) => {
         }
 
         const combinedText = (message.content || "") + "\n" + fileText;
-        const list = parsePolicies(combinedText);
+        let list = parsePolicies(combinedText); // 👈 Đổi từ const thành let ở đây
         if (list.length === 0) return;
+
+        // 👉 ĐOẠN LỌC TRÙNG:
+        const uniqueMap = new Map();
+        for (const item of list) {
+            if (item && item.policy && !uniqueMap.has(item.policy)) {
+                uniqueMap.set(item.policy, item);
+            }
+        }
+        list = Array.from(uniqueMap.values());
 
         await message.channel.sendTyping();
         const waitMessage = await message.reply("⏳ Phát hiện danh sách mã! Đang kết nối hệ thống quét dữ liệu, vui lòng đợi...");
