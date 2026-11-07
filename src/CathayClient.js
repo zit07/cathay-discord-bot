@@ -63,6 +63,7 @@ class CathayClient {
     }
 
     parseResult(data) {
+        console.log("🛠️ [DEBUG RAW DATA]:", JSON.stringify(data, null, 2));
         if (!data || typeof data !== 'object') {
             throw new Error("Phản hồi API không hợp lệ");
         }
