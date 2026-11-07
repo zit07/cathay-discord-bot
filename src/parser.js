@@ -38,16 +38,23 @@ function parsePolicies(text) {
         const policy = block.policy;
         const combinedText = block.lines.join(' ');
 
-        // 1. Tìm tháng cần lọc (Ví dụ: tháng 6, tháng6, t6)
+        // 1. Tìm tháng cần lọc (Chỉ bắt khi có "tháng" hoặc "t" đứng độc lập + số từ 1-12)
+        // Ví dụ bắt chuẩn: "tháng 10", "tháng10", "t10", "T6"
+        // Tránh bắt nhầm: "tuyết 754", "tiền 500"
         let targetMonth = null;
-        const monthMatch = combinedText.match(/(?:tháng|t)\s*(\d+)/i);
+        const monthMatch = combinedText.match(/(?:\btháng\s*|\bt)(\d{1,2})\b/i);
         if (monthMatch) {
-            targetMonth = parseInt(monthMatch[1], 10);
+            const m = parseInt(monthMatch[1], 10);
+            if (m >= 1 && m <= 12) {
+                targetMonth = m;
+            }
         }
 
         // 2. Tách mã và cụm tháng ra khỏi chuỗi để lấy số tiền
         let textForAmount = combinedText.replace(POLICY_REGEX, '');
-        textForAmount = textForAmount.replace(/(?:tháng|t)\s*(\d+)/i, '');
+        if (monthMatch && targetMonth !== null) {
+            textForAmount = textForAmount.replace(monthMatch[0], '');
+        }
 
         // 3. Trích xuất số tiền (nhận diện cả số có dấu chấm như 11.385 hay kèm k, đ)
         const amountMatch = textForAmount.match(/(\d+[\d\.]*)\s*(k|đ|dđ)?(?=[^\d]*$)/i) || 

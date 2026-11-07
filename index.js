@@ -48,9 +48,6 @@ function filterResultsByMonth(results) {
     
     for (const r of results) {
         if (!r || r.error) continue;
-        
-        // 👉 THÊM: Xem items gốc trước khi lọc tháng
-        console.log(`🛠️ [DEBUG BEFORE] Mã ${r.policy}:`, r.items);
 
         let filteredItems = Array.isArray(r.items) ? [...r.items] : [];
 
@@ -67,9 +64,6 @@ function filterResultsByMonth(results) {
         
         r.items = filteredItems;
         r.cathay = r.items.reduce((sum, item) => sum + (item.amount || 0), 0);
-
-        // 👉 THÊM: Xem kết quả sau khi lọc và tổng tiền tính ra
-        console.log(`🛠️ [DEBUG AFTER] Mã ${r.policy}: số kỳ nợ = ${r.items.length}, tổng tiền = ${r.cathay}`);
         
         // BẢO VỆ: Chỉ xác nhận Đã thanh toán khi Cathay báo 1005 (isOfficialPaid) 
         // hoặc khi không lọc theo tháng và danh sách cước thực sự rỗng.
