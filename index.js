@@ -106,6 +106,20 @@ const client = new Client({
 client.on('error', (err) => console.error('❌ [LỖI CLIENT]:', err.message));
 client.on('shardError', (error) => console.error('❌ [LỖI GATEWAY WEBSOCKET]:', error.message));
 
+// Lưu thời điểm nhận tin nhắn cuối cùng (tính bằng ms)
+let lastMessageTime = Date.now();
+const TARGET_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID || "1527599589161570365"; 
+
+// Hàm kiểm tra xem hiện tại có nằm trong khung giờ 9h00 - 22h00 hay không
+function isWithinActiveHours() {
+    const now = new Date();
+    // Chuyển sang giờ Việt Nam (ICT - UTC+7) nếu server/TV Box dùng múi giờ khác
+    const options = { timeZone: 'Asia/Ho_Chi_Minh', hour: '24', hour12: false };
+    const currentHour = parseInt(now.toLocaleTimeString('en-US', { ...options, hour: 'numeric' }), 10);
+    
+    return currentHour >= 9 && currentHour < 22; // Từ 9h00 đến trước 22h00
+}
+
 // Sử dụng sự kiện 'ready' chuẩn của discord.js
 client.once('ready', (c) => {
     console.log(`🟢 Bot Cathay đã online thành công với tên: ${c.user.tag}`);
@@ -114,10 +128,35 @@ client.once('ready', (c) => {
     if (!client.autoCheckInterval) {
         client.autoCheckInterval = setInterval(autoCheckSubscriptions, 1 * 60 * 1000);
     }
+
+    // 👉 THÊM: Quét mỗi 15 phút để kiểm tra khoảng trống 5 tiếng không có tin nhắn
+    setInterval(async () => {
+        const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        // Đủ 5 tiếng chưa có tin nhắn & Nằm trong khung giờ 9h - 22h
+        if (now - lastMessageTime >= FIVE_HOURS_MS && isWithinActiveHours()) {
+            try {
+                // Lấy channel ID từ tin nhắn lưu gần nhất hoặc ID cố định
+                const channelId = TARGET_CHANNEL_ID;
+                const channel = await client.channels.fetch(channelId).catch(() => null);
+                
+                if (channel) {
+                    await channel.send("Nay ế dậy hả chị Linh 🥹");
+                    // Cập nhật lại mốc thời gian để 5 tiếng sau mới nhắc tiếp (nếu vẫn tiếp tục ế)
+                    lastMessageTime = Date.now();
+                }
+            } catch (err) {
+                console.error("❌ Lỗi khi gửi tin nhắn nhắc ế:", err.message);
+            }
+        }
+    }, 15 * 60 * 1000); // Kiểm tra mỗi 15 phút
 });
 
 client.on('messageCreate', async (message) => {
     try {
+        lastMessageTime = Date.now();
+    
         if (message.author.bot) return;
 
         let fileText = "";
