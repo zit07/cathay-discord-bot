@@ -156,10 +156,8 @@ client.once('ready', (c) => {
             const currentMinute = vnDate.getMinutes();
             const dateKey = `${vnDate.getFullYear()}-${vnDate.getMonth() + 1}-${vnDate.getDate()}`;
 
-            // Xác định kênh Discord sẽ gửi thông báo (ưu tiên kênh vừa có tương tác gần nhất, hoặc channel ID mặc định)
-            const channelId = lastActiveChannelId || process.env.DISCORD_CHANNEL_ID;
-            if (!channelId) return;
-
+            // 👉 Lấy thẳng luôn kênh cố định của bạn
+            const channelId = TARGET_CHANNEL_ID;
             const channel = await client.channels.fetch(channelId).catch(() => null);
             if (!channel) return;
 
