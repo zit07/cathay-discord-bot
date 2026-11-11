@@ -2,12 +2,12 @@ function parsePolicies(text) {
     if (!text) return [];
     const lines = text.split('\n');
 
-    // Regex hỗ trợ cả 2 dạng mã:
+    // Regex hỗ trợ nhận diện mã hóa đơn:
     // 1. Chữ S + 11 chữ số (Ví dụ: S12345678901)
     // 2. 2 chữ số + 1 chữ cái + 9 chữ số (Ví dụ: 01M009146485)
     const POLICY_REGEX = /(?:S\d{11}|\d{2}[A-Za-z]\d{9})/i;
 
-    // Gom nhóm các dòng theo từng mã (xử lý cả trường hợp số tiền nằm khác dòng với mã)
+    // Gom nhóm các dòng theo từng mã hóa đơn
     const blocks = [];
     let currentBlock = null;
 
@@ -38,40 +38,49 @@ function parsePolicies(text) {
         const policy = block.policy;
         const combinedText = block.lines.join(' ');
 
-        // 1. Tìm tháng cần lọc (Chỉ bắt khi có "tháng" hoặc "t" đứng độc lập + số từ 1-12)
-        // Ví dụ bắt chuẩn: "tháng 10", "tháng10", "t10", "T6"
-        // Tránh bắt nhầm: "tuyết 754", "tiền 500"
-        let targetMonth = null;
-        const monthMatch = combinedText.match(/(?:\btháng\s*|\bt)(\d{1,2})\b/i);
-        if (monthMatch) {
-            const m = parseInt(monthMatch[1], 10);
-            if (m >= 1 && m <= 12) {
-                targetMonth = m;
-            }
-        }
+        // Tách mã hóa đơn ra khỏi chuỗi
+        let textWithoutPolicy = combinedText.replace(POLICY_REGEX, '');
 
-        // 2. Tách mã và cụm tháng ra khỏi chuỗi để lấy số tiền
-        let textForAmount = combinedText.replace(POLICY_REGEX, '');
-        if (monthMatch && targetMonth !== null) {
-            textForAmount = textForAmount.replace(monthMatch[0], '');
-        }
+        // Loại bỏ các cụm nhân số lượng (ví dụ: "x 2", "x2") để tránh nhầm lẫn số nhỏ với tháng
+        textWithoutPolicy = textWithoutPolicy.replace(/x\s*\d+/gi, '');
 
-        // 3. Trích xuất số tiền (nhận diện cả số có dấu chấm như 11.385 hay kèm k, đ)
-        const amountMatch = textForAmount.match(/(\d+[\d\.]*)\s*(k|đ|dđ)?(?=[^\d]*$)/i) || 
-                            textForAmount.match(/(\d+[\d\.]*)\s*(k|đ|dđ)?/i);
+        // Trích xuất tất cả các con số xuất hiện trong văn bản (hỗ trợ cả dấu chấm phân cách như 1.508.000)
+        const numberMatches = [...textWithoutPolicy.matchAll(/(\d+[\d\.]*)\s*(k|đ|dđ)?/gi)];
 
         let expected = null;
-        if (amountMatch) {
-            let rawAmount = amountMatch[1].replace(/\./g, ''); // Bỏ dấu chấm phân cách (11.385 -> 11385)
-            let num = parseFloat(rawAmount);
+        const monthsFound = [];
 
-            const unit = amountMatch[2] ? amountMatch[2].toLowerCase() : '';
+        for (const match of numberMatches) {
+            const rawNumStr = match[1];
+            const unit = match[2] ? match[2].toLowerCase() : '';
+            const cleanNumStr = rawNumStr.replace(/\./g, '');
+            const num = parseFloat(cleanNumStr);
 
-            // Tự động nhân 1000 cho số viết tắt/rút gọn (< 100.000 như 11.385 -> 11.385.000đ)
-            if (unit === 'k' || num < 100000) {
-                num = num * 1000;
+            if (isNaN(num)) continue;
+
+            // Áp dụng quy tắc của bạn:
+            // 1. Số > 12 hoặc có đơn vị 'k', 'đ' là SỐ TIỀN
+            if (unit === 'k' || num > 12) {
+                let finalAmount = num;
+                if (unit === 'k' || finalAmount < 100000) {
+                    finalAmount = finalAmount * 1000;
+                }
+                expected = finalAmount;
+            } 
+            // 2. Số từ 1 đến 12 là SỐ THÁNG
+            else if (num >= 1 && num <= 12) {
+                if (!monthsFound.includes(num)) {
+                    monthsFound.push(num);
+                }
             }
-            expected = num;
+        }
+
+        // Xử lý targetMonth: nếu có 1 tháng trả về số, nhiều tháng trả về mảng
+        let targetMonth = null;
+        if (monthsFound.length === 1) {
+            targetMonth = monthsFound[0];
+        } else if (monthsFound.length > 1) {
+            targetMonth = monthsFound;
         }
 
         results.push({

@@ -56,7 +56,13 @@ function filterResultsByMonth(results) {
                 if (!item || !item.date) return false;
                 const parts = item.date.split('-');
                 if (parts.length >= 2) {
-                    return parseInt(parts[1], 10) === r.targetMonth;
+                    const month = parseInt(parts[1], 10);
+                    // Hỗ trợ kiểm tra nếu targetMonth là mảng hoặc số đơn
+                    if (Array.isArray(r.targetMonth)) {
+                        return r.targetMonth.includes(month);
+                    } else {
+                        return month === r.targetMonth;
+                    }
                 }
                 return false;
             });
@@ -65,8 +71,6 @@ function filterResultsByMonth(results) {
         r.items = filteredItems;
         r.cathay = r.items.reduce((sum, item) => sum + (item.amount || 0), 0);
         
-        // BẢO VỆ: Chỉ xác nhận Đã thanh toán khi Cathay báo 1005 (isOfficialPaid) 
-        // hoặc khi không lọc theo tháng và danh sách cước thực sự rỗng.
         if (r.isOfficialPaid) {
             r.paid = true;
         } else if (r.targetMonth == null && r.items.length === 0) {
