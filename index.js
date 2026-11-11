@@ -124,37 +124,61 @@ function isWithinActiveHours() {
     return currentHour >= 9 && currentHour < 22; // Từ 9h00 đến trước 22h00
 }
 
+// Biến theo dõi ngày gửi lời chúc buổi sáng (để tránh bị gửi lặp lại trong cùng 1 ngày)
+let lastMorningGreetingDate = null;
+
+// Sửa lại khung giờ hoạt động: Từ 11h00 đến trước 22h00
+function isWithinActiveHours() {
+    const now = new Date();
+    const options = { timeZone: 'Asia/Ho_Chi_Minh', hour: '24', hour12: false };
+    const currentHour = parseInt(now.toLocaleTimeString('en-US', { ...options, hour: 'numeric' }), 10);
+    
+    return currentHour >= 11 && currentHour < 22; // Bắt đầu từ 11h sáng đến 22h tối
+}
+
 // Sử dụng sự kiện 'ready' chuẩn của discord.js
 client.once('ready', (c) => {
     console.log(`🟢 Bot Cathay đã online thành công với tên: ${c.user.tag}`);
-    
     
     if (!client.autoCheckInterval) {
         client.autoCheckInterval = setInterval(autoCheckSubscriptions, 1 * 60 * 1000);
     }
 
-    // 👉 THÊM: Quét mỗi 15 phút để kiểm tra khoảng trống 5 tiếng không có tin nhắn
+    // Kiểm tra định kỳ mỗi 1 phút để bắt chuẩn xác phút 9:12 sáng và quét 3 tiếng không chat
     setInterval(async () => {
-        const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
-        const now = Date.now();
+        try {
+            const now = new Date();
+            
+            // Lấy thời gian chuẩn theo múi giờ Việt Nam (Asia/Ho_Chi_Minh)
+            const vnTimeStr = now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
+            const vnDate = new Date(vnTimeStr);
+            const currentHour = vnDate.getHours();
+            const currentMinute = vnDate.getMinutes();
+            const dateKey = `${vnDate.getFullYear()}-${vnDate.getMonth() + 1}-${vnDate.getDate()}`;
 
-        // Đủ 5 tiếng chưa có tin nhắn & Nằm trong khung giờ 9h - 22h
-        if (now - lastMessageTime >= FIVE_HOURS_MS && isWithinActiveHours()) {
-            try {
-                // Lấy channel ID từ tin nhắn lưu gần nhất hoặc ID cố định
-                const channelId = TARGET_CHANNEL_ID;
-                const channel = await client.channels.fetch(channelId).catch(() => null);
-                
-                if (channel) {
-                    await channel.send("Nay ế dậy hả chị Linh 🥹");
-                    // Cập nhật lại mốc thời gian để 5 tiếng sau mới nhắc tiếp (nếu vẫn tiếp tục ế)
-                    lastMessageTime = Date.now();
-                }
-            } catch (err) {
-                console.error("❌ Lỗi khi gửi tin nhắn nhắc ế:", err.message);
+            // Xác định kênh Discord sẽ gửi thông báo (ưu tiên kênh vừa có tương tác gần nhất, hoặc channel ID mặc định)
+            const channelId = lastActiveChannelId || process.env.DISCORD_CHANNEL_ID;
+            if (!channelId) return;
+
+            const channel = await client.channels.fetch(channelId).catch(() => null);
+            if (!channel) return;
+
+            // 1. ☀️ Lời chúc lúc 9:12 sáng (Chỉ gửi 1 lần mỗi ngày)
+            if (currentHour === 9 && currentMinute === 12 && lastMorningGreetingDate !== dateKey) {
+                await channel.send("☀️ Chúc chị Linh buổi sáng tràn đầy năng lượng, hồng phát, chốt đơn mỏi tay, làm được thật nhiều khách Momo và có một ngày làm việc thật suôn sẻ nhé! 💰✨");
+                lastMorningGreetingDate = dateKey; // Đánh dấu là hôm nay đã chúc rồi
             }
+
+            // 2. 🥹 Nhắc "ế" sau 3 tiếng không có tin nhắn (Áp dụng từ 11h trưa đến 22h tối)
+            const THREE_HOURS_MS = 3 * 60 * 60 * 1000; // 3 tiếng tính bằng mili-giây
+            if (Date.now() - lastMessageTime >= THREE_HOURS_MS && isWithinActiveHours()) {
+                await channel.send("Nay ế vậy hả chị Linh 🥹");
+                lastMessageTime = Date.now(); // Reset lại mốc thời gian để đếm 3 tiếng tiếp theo
+            }
+        } catch (err) {
+            console.error("❌ Lỗi trong tiến trình quét tự động:", err.message);
         }
-    }, 15 * 60 * 1000); // Kiểm tra mỗi 15 phút
+    }, 60 * 1000); // Chạy kiểm tra mỗi 1 phút
 });
 
 client.on('messageCreate', async (message) => {
